@@ -1,0 +1,42 @@
+[package]
+name = "vael"
+version = "0.5.2"
+description = "Vael — voice AI coach for Dota 2 (desktop thin client)"
+authors = ["Vael"]
+edition = "2021"
+rust-version = "1.77"
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = ["tray-icon"] }
+tauri-plugin-global-shortcut = "2"
+tauri-plugin-shell = "2"
+tauri-plugin-autostart = "2"
+tauri-plugin-single-instance = "2"
+tauri-plugin-updater = "2"
+tauri-plugin-process = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "net", "time", "sync"] }
+axum = "0.7"
+sysinfo = "0.32"
+dirs = "5"
+image = "0.25"
+base64 = "0.22"
+
+[target.'cfg(windows)'.dependencies]
+winreg = "0.52"
+# Grant the WebView2 microphone permission from Rust (push-to-talk getUserMedia).
+# Pinned to the exact versions Tauri 2.11 / wry 0.55 already resolve, so the COM
+# types from `with_webview().controller()` match.
+webview2-com = "0.38"
+windows = { version = "0.61", features = ["Win32_Foundation", "Win32_System_WinRT", "Win32_UI_WindowsAndMessaging", "Win32_UI_Accessibility"] }
+# CV capture (P1-A). Pulls windows 0.62 transitively; the app stays on windows 0.61
+# (webview2-com pin). Bridge is a raw *mut c_void HWND, so the two majors never share types.
+windows-capture = "2.0"
+
+[features]
+# This feature is used for production builds where `devUrl` is unset.
+custom-protocol = ["tauri/custom-protocol"]

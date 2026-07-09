@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Vael overlay</title>
+    <style>
+      html, body { margin: 0; height: 100%; background: transparent; overflow: hidden; }
+      /* The window is sized exactly to its content by the Rust side. The capsule
+         docks to the bottom edge by default (panel opens upward); when the panel
+         opens downward the Rust side flips the dock and the capsule stays on top. */
+      body { display: flex; align-items: flex-end; justify-content: flex-end; padding: 8px; cursor: grab; }
+      body.dragging { cursor: grabbing; }
+      #wrap { display: flex; flex-direction: column; align-items: flex-end; gap: 6px; }
+      body.dock-top #wrap { flex-direction: column-reverse; }
+      #cap {
+        display: flex; align-items: center; gap: 8px;
+        background: rgba(10, 14, 18, 0.82);
+        border: 1px solid #5a6473; border-radius: 20px;
+        padding: 5px 12px 5px 6px;
+        backdrop-filter: blur(6px);
+        transition: border-color 0.2s;
+      }
+      #cap.on { border-color: #a6ff3c; }
+      #cap .drone { line-height: 0; }
+      #bars { display: flex; align-items: flex-end; gap: 2.5px; height: 14px; }
+      #bars span { width: 2.5px; border-radius: 2px; background: #5a6473; transition: background 0.2s; }
+      #cap.on #bars span { background: #a6ff3c; }
+      #cap.answer #bars span { animation: eq 0.6s ease-in-out infinite; transform-origin: bottom; }
+      #bars span:nth-child(2) { animation-delay: 0.1s; }
+      #bars span:nth-child(3) { animation-delay: 0.2s; }
+      #bars span:nth-child(4) { animation-delay: 0.15s; }
+      #bars span:nth-child(5) { animation-delay: 0.05s; }
+      @keyframes eq { 0%, 100% { transform: scaleY(0.35); } 50% { transform: scaleY(1); } }
+      #cap.listen #bars span { animation: pulse 1.1s ease-in-out infinite; }
+      @keyframes pulse { 0%, 100% { opacity: 0.45; } 50% { opacity: 1; } }
+      #dots { display: none; gap: 4px; }
+      #cap.think #dots { display: flex; }
+      #cap.think #bars { display: none; }
+      #dots span { width: 4px; height: 4px; border-radius: 50%; background: #a6ff3c; animation: pulse 1s ease-in-out infinite; }
+      #dots span:nth-child(2) { animation-delay: 0.2s; }
+      #dots span:nth-child(3) { animation-delay: 0.4s; }
+      /* Transient note (errors): replaces the bars for a few seconds. */
+      #note { display: none; color: #eaf0f8; font: 12px/1.2 system-ui; white-space: nowrap; }
+      #cap.note-on #note { display: inline; }
+      #cap.note-on #bars, #cap.note-on #dots { display: none; }
+      /* Item icons the coach just recommended. */
+      #panel {
+        display: none;
+        grid-template-columns: repeat(3, 60px);
+        gap: 6px;
+        background: rgba(10, 14, 18, 0.82);
+        border: 1px solid #5a6473; border-radius: 10px;
+        padding: 4px;
+        backdrop-filter: blur(6px);
+      }
+      #panel.on { display: grid; }
+      #panel img {
+        width: 60px; height: 44px; object-fit: cover;
+        border-radius: 6px; border: 1px solid #39414d;
+        background: #0a0e12;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="wrap">
+      <div id="panel"></div>
+      <div id="cap" class="idle">
+        <span class="drone" id="ovDrone"></span>
+        <div id="bars"><span style="height:6px"></span><span style="height:12px"></span><span style="height:8px"></span><span style="height:14px"></span><span style="height:7px"></span></div>
+        <div id="dots"><span></span><span></span><span></span></div>
+        <span id="note"></span>
+      </div>
+    </div>
+    <script src="logo.js"></script>
+    <script src="overlay.js"></script>
+  </body>
+</html>

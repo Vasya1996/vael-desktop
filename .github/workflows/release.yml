@@ -1,0 +1,89 @@
+# Build, sign, and publish a Vael desktop release — entirely from public source and
+# public CI, so anyone can verify the installer they download matches this code.
+#
+# Trigger: push a tag `desktop-v<version>` (bump src-tauri/tauri.conf.json "version"
+# to match first — it is authoritative for the bundle name and update comparison).
+#
+# Required repository secret (Settings -> Secrets and variables -> Actions):
+#   TAURI_SIGNING_PRIVATE_KEY            - the minisign private key contents
+#   TAURI_SIGNING_PRIVATE_KEY_PASSWORD   - its password ("" if none)
+# The matching PUBLIC key is baked into src-tauri/tauri.conf.json. Secrets are stored
+# encrypted and are never exposed in logs or to forks, even though this repo is public.
+
+name: Release
+
+on:
+  push:
+    tags: ["desktop-v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write # create the GitHub Release and upload assets
+
+jobs:
+  release:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - name: Install JS deps
+        run: npm ci
+
+      - name: Build + sign (NSIS installer + updater signature)
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: npm run build
+
+      - name: Assemble release assets (installer, latest.json, checksums)
+        shell: bash
+        run: |
+          set -euo pipefail
+          VERSION=$(node -p "require('./src-tauri/tauri.conf.json').version")
+          NSIS_DIR="src-tauri/target/release/bundle/nsis"
+          ARTIFACT="Vael_${VERSION}_x64-setup.exe"
+          SIG_FILE="${NSIS_DIR}/${ARTIFACT}.sig"
+          if [ ! -f "$SIG_FILE" ]; then echo "missing signature: $SIG_FILE"; ls -la "$NSIS_DIR"; exit 1; fi
+          SIG=$(cat "$SIG_FILE")
+          PUBDATE=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+          mkdir -p out
+          cp "${NSIS_DIR}/${ARTIFACT}" "out/${ARTIFACT}"
+          # Stable-named copy so the updater feed URL never changes across versions.
+          cp "${NSIS_DIR}/${ARTIFACT}" "out/Vael-Setup.exe"
+          # The .sig is over the file bytes, so it is valid for the stable-named copy too.
+          UPDATE_URL="https://github.com/${GITHUB_REPOSITORY}/releases/latest/download/Vael-Setup.exe"
+          cat > out/latest.json <<EOF
+          {
+            "version": "${VERSION}",
+            "notes": "Vael ${VERSION}",
+            "pub_date": "${PUBDATE}",
+            "platforms": {
+              "windows-x86_64": {
+                "signature": "${SIG}",
+                "url": "${UPDATE_URL}"
+              }
+            }
+          }
+          EOF
+          ( cd out && sha256sum Vael_*_x64-setup.exe Vael-Setup.exe > SHA256SUMS.txt )
+          echo "Assets:"; ls -la out
+
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            out/Vael_*_x64-setup.exe
+            out/Vael-Setup.exe
+            out/latest.json
+            out/SHA256SUMS.txt
+          fail_on_unmatched_files: true

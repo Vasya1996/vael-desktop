@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Vael</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <div id="frame">
+      <!-- custom title bar -->
+      <div id="titlebar">
+        <span class="tb-label" data-tauri-drag-region>VAEL</span>
+        <div class="tb-spacer" data-tauri-drag-region></div>
+        <div class="win-btns">
+          <div class="win-btn" id="winMin" title="Minimize">—</div>
+          <div class="win-btn" id="winMax" title="Maximize">▢</div>
+          <div class="win-btn close" id="winClose" title="Close">✕</div>
+        </div>
+      </div>
+
+      <!-- app header -->
+      <div id="appheader">
+        <div class="brandbox">
+          <span class="brand-logo" id="brandLogo"></span>
+          <span class="brand-name">Vael</span>
+        </div>
+        <div class="hdr-sep"></div>
+        <span class="hdr-section" id="hdrSection">Home</span>
+        <div class="hdr-right">
+          <div id="coachChip" class="coach-chip idle hidden"></div>
+          <div id="authArea"></div>
+        </div>
+      </div>
+
+      <!-- body: sidebar + content -->
+      <div id="bodyrow">
+        <div id="sidebar" class="hidden">
+          <div class="nav-item" data-nav="library">
+            <span class="nav-ic" id="navLibIc"></span><span id="navLibLabel">Library</span>
+          </div>
+          <div class="nav-item" data-nav="settings">
+            <span class="nav-ic" id="navSetIc"></span><span id="navSetLabel">Settings</span>
+          </div>
+          <div class="nav-foot"></div>
+        </div>
+        <div id="content"></div>
+      </div>
+    </div>
+
+    <script src="logo.js"></script>
+    <script src="app.js"></script>
+  </body>
+</html>
