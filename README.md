@@ -46,15 +46,17 @@ checksums, so the installer you download can be checked against the one CI produ
 
 ---
 
-## Кратко по-русски (безопасность)
+## Installing (Windows SmartScreen)
 
-Это открытый исходник **клиента** Vael — приложения, которое работает у вас на ПК. Сервер
-(ИИ-тренер) — отдельный, в этот репозиторий не входит. Приложение читает состояние матча
-через штатную функцию Dota (**GSI**, только localhost) и — **опционально, по умолчанию
-выключено** — распознаёт состав врага, снимая **только окно Dota**. Оно **не** вводит
-команды в игру, **не** логирует нажатия клавиш (слушает одну вашу клавишу рации), **не**
-снимает весь экран и другие программы. Обновления подписаны ключом и проверяются
-приложением; в каждом релизе есть контрольные суммы — можно сверить скачанный файл.
+When you run the installer, Windows SmartScreen may show a blue **"Windows protected your
+PC — unknown publisher"** warning. This is expected: Vael is open-source and is **not**
+signed with a paid Authenticode certificate, so Windows doesn't recognize the publisher.
+Click **More info → Run anyway** to continue.
+
+This is normal for open-source software that ships without a code-signing certificate — it
+does not mean the app is unsafe. You can read every line of what it does in this repository,
+and each release ships a SHA-256 checksum so you can verify the installer matches the public
+build.
 
 ---
 
