@@ -10,6 +10,44 @@ is a separate hosted service and is not part of this repo.
 
 ---
 
+## Quick start (for players)
+
+**1. Download & install.** No account is needed just to download.
+
+- Click **Download** on **https://vaelcopilot.tractioneye.xyz**, then run `Vael-Setup.exe`.
+- Or download and launch it from PowerShell in one line:
+
+```powershell
+iwr https://vaelcopilot.tractioneye.xyz/download/Vael-Setup.exe -OutFile "$env:TEMP\Vael-Setup.exe"; & "$env:TEMP\Vael-Setup.exe"
+```
+
+On first run, Windows SmartScreen may warn about an "unknown publisher" — click **More info
+→ Run anyway** (see [Installing](#installing-windows-smartscreen) below for why that's normal).
+
+**2. Create an account.** Open Vael and sign up with email or Google (or sign in if you
+already have an account).
+
+**3. Choose your push-to-talk key.** Open **Settings** and pick the key you'll hold to talk
+to Vael.
+
+![Choose your push-to-talk key](docs/images/step-1-pushtotalk.png)
+
+**4. Pick the game.** In **Library**, select **Dota 2** (the only supported game for now).
+
+![Pick Dota 2 in the Library](docs/images/step-2-library.png)
+
+**5. Launch with the coach.** Hover the Dota 2 cover and click **Play with AI companion** —
+the game and Vael start together, and Vael tucks itself into the system tray.
+
+![Launch with the AI companion](docs/images/step-3-launch.png)
+
+**6. Talk to Vael in-game.** Once you're in a match, **hold your push-to-talk key and ask a
+question** — Vael answers out loud, right in the game.
+
+![Vael ready in-game](docs/images/step-4-voice.png)
+
+---
+
 ## Is it safe? What the app actually does
 
 Everything below is verifiable in this source tree — the relevant files are named.
