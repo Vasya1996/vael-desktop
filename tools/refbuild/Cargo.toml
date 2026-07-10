@@ -1,0 +1,16 @@
+[package]
+name = "refbuild"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+# Offline tool: pack the canonical hero portraits extracted from the Dota VPK into
+# the bundled color-reference blob the app's vision matcher loads. Not shipped.
+# Re-run on a Dota patch (re-extract the VPK portraits, then rebuild the blob).
+
+[[bin]]
+name = "refbuild"
+path = "src/main.rs"
+
+[dependencies]
+image = "0.25"

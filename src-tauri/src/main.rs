@@ -198,19 +198,6 @@ fn vision_snapshot_topbar() -> Result<String, String> {
     }
 }
 
-/// Dev/QA: capture one frame of the Dota window to config_dir()/vision_debug/.
-/// Returns a status string. No-op error when the flag is off or Dota isn't running.
-#[tauri::command]
-fn vision_dev_capture() -> Result<String, String> {
-    #[cfg(windows)]
-    {
-        vision::capture_to_debug()
-    }
-    #[cfg(not(windows))]
-    {
-        Err("vision capture is Windows-only".into())
-    }
-}
 
 /// Show a short transient note in the overlay (e.g. "voice failed, retry").
 #[tauri::command]
@@ -602,7 +589,6 @@ fn main() {
             google_login,
             vision_set_enabled,
             vision_snapshot_topbar,
-            vision_dev_capture,
             vision_watch,
             set_overlay_hit_rect
         ])
@@ -780,15 +766,6 @@ async fn watch_dota(app: AppHandle) {
                     topmost::set_active(false);
                 }
             }
-            // CV (P1-A): when Dota appears AND the flag is on, grab one debug
-            // frame. Flag is off by default → this is a no-op for normal users.
-            #[cfg(windows)]
-            if running && vision::is_enabled() {
-                match vision::capture_to_debug() {
-                    Ok(info) => eprintln!("[vael][vision] dev capture: {info}"),
-                    Err(e) => eprintln!("[vael][vision] dev capture skipped: {e}"),
-                }
-            }
         }
         tokio::time::sleep(Duration::from_secs(4)).await;
     }
@@ -805,11 +782,18 @@ async fn watch_dota(app: AppHandle) {
 #[cfg(windows)]
 fn vision_capture_loop(app: AppHandle) {
     use std::collections::{HashMap, HashSet};
-    let mut confirm: HashMap<String, u32> = HashMap::new();
-    // Level temporal state: per-hero (last level read, consecutive frames) and the highest
-    // level already shipped (levels never decrease in a match — a drop means a misread).
-    let mut level_seen: HashMap<String, (u64, u32)> = HashMap::new();
-    let mut level_locked: HashMap<String, u64> = HashMap::new();
+    // Top-bar composition (recognize-and-lock): confirm counts, the lock itself, and
+    // the cached anchor geometry to re-verify (not re-sweep) each scan.
+    let mut tb_confirm: HashMap<String, u32> = HashMap::new();
+    let mut tb_locked = false;
+    let mut tb_geom: Option<vision::locate::Located> = None;
+    // Plateau slow-down: some enemy slots (arcana/alt art) can stably score below
+    // recognize::PEAK_MIN and so never reach `known` — `tb_locked` (all 9 confirmed)
+    // may then never trigger. Track consecutive scans with no NEW confirmed hero; once
+    // the composition has plateaued, drop to a slow keep-alive cadence (main loop below)
+    // instead of burning a capture every tick for slots that will never confirm.
+    let mut tb_stale_scans: u32 = 0;
+    let mut tb_skip: u32 = 0;
     let mut last_own: Option<String> = None;
     // True while we were inside a fast-watch window on the previous iteration; used to do
     // one immediate scan the instant a watch window opens (skip the leading sleep) so the
@@ -829,9 +813,11 @@ fn vision_capture_loop(app: AppHandle) {
         }
         was_watching = watching;
         if !vision::is_enabled() {
-            confirm.clear();
-            level_seen.clear();
-            level_locked.clear();
+            tb_confirm.clear();
+            tb_locked = false;
+            tb_geom = None;
+            tb_stale_scans = 0;
+            tb_skip = 0;
             last_own = None;
             continue;
         }
@@ -844,88 +830,62 @@ fn vision_capture_loop(app: AppHandle) {
         // New draft/match (own hero changed) → drop all temporal state so a previous game's
         // levels can never gate this one (the monotonic lock would otherwise withhold reads).
         if last_own.as_deref() != Some(own.hero.as_str()) {
-            confirm.clear();
-            level_seen.clear();
-            level_locked.clear();
+            tb_confirm.clear();
+            tb_locked = false;
+            tb_geom = None;
+            tb_stale_scans = 0;
+            tb_skip = 0;
             last_own = Some(own.hero.clone());
         }
-        let Some(mut payload) = vision::scan_scoreboard_now(&own.hero, &own.team) else {
-            continue;
-        };
 
-        if let Some(obs) = payload.get_mut("observations").and_then(|v| v.as_array_mut()) {
-            // Distinct hero keys that read `known` THIS frame (deduped — a hero counts at
-            // most once per frame, so a single capture can never reach the 2-frame bar on
-            // its own, even if the same key were to appear on two rows).
-            let frame_known: HashSet<String> = obs
-                .iter()
-                .filter(|o| o.get("status").and_then(|s| s.as_str()) == Some("known"))
-                .filter_map(|o| o.get("hero").and_then(|h| h.as_str()).map(str::to_string))
-                .filter(|h| !h.is_empty())
-                .collect();
-            // Count consecutive FRAMES, not observations; reset heroes not seen this frame.
-            for hero in &frame_known {
-                *confirm.entry(hero.clone()).or_insert(0) += 1;
-            }
-            confirm.retain(|k, _| frame_known.contains(k));
-            // Hold back any `known` whose hero hasn't been confirmed in 2 consecutive frames.
-            for o in obs.iter_mut() {
-                if o.get("status").and_then(|s| s.as_str()) == Some("known") {
-                    let hero = o.get("hero").and_then(|h| h.as_str()).unwrap_or("");
-                    if confirm.get(hero).copied().unwrap_or(0) < 2 {
-                        o["status"] = json!("unconfirmed");
+        // Top-bar composition (Phase A): the draft is static, so scan only until every
+        // non-own slot has shipped `known` twice (recognize-and-lock), then stop for the
+        // match. Cheap steady state: the cached anchor geometry is re-verified, not re-swept.
+        if !tb_locked {
+            // Plateau slow-down: once 30 consecutive scans confirmed no NEW hero, the
+            // remaining slots are presumed unconfirmable (arcana/alt art) — scan only
+            // every 6th iteration to keep the composition alive without full-rate cost.
+            let should_scan = if tb_stale_scans >= 30 {
+                tb_skip = (tb_skip + 1) % 6;
+                tb_skip == 0
+            } else {
+                true
+            };
+            if should_scan {
+                if let Some((mut tb_payload, loc)) = vision::scan_topbar_now(&own.hero, &own.team, tb_geom.as_ref()) {
+                    tb_geom = Some(loc);
+                    if let Some(obs) = tb_payload.get_mut("observations").and_then(|v| v.as_array_mut()) {
+                        let frame_known: HashSet<String> = obs.iter()
+                            .filter(|o| o.get("status").and_then(|s| s.as_str()) == Some("known"))
+                            .filter_map(|o| o.get("hero").and_then(|h| h.as_str()).map(str::to_string))
+                            .filter(|h| !h.is_empty())
+                            .collect();
+                        let confirmed_before = tb_confirm.values().filter(|&&c| c >= 2).count();
+                        for hero in &frame_known { *tb_confirm.entry(hero.clone()).or_insert(0) += 1; }
+                        tb_confirm.retain(|k, _| frame_known.contains(k));
+                        let confirmed_after = tb_confirm.values().filter(|&&c| c >= 2).count();
+                        let grew = confirmed_after > confirmed_before;
+                        if grew {
+                            tb_stale_scans = 0;
+                        } else {
+                            tb_stale_scans += 1;
+                        }
+                        let mut all_confirmed = obs.len() == 9;
+                        for o in obs.iter_mut() {
+                            if o.get("status").and_then(|s| s.as_str()) == Some("known") {
+                                let hero = o.get("hero").and_then(|h| h.as_str()).unwrap_or("");
+                                if tb_confirm.get(hero).copied().unwrap_or(0) < 2 {
+                                    o["status"] = json!("unconfirmed");
+                                    all_confirmed = false;
+                                }
+                            } else { all_confirmed = false; }
+                        }
+                        tb_locked = all_confirmed;
                     }
-                }
-            }
-
-            // Level gating. The wrong-level guarantee lives in `vision::level`'s per-digit
-            // peak+margin gate (set with large headroom); these temporal guards only add
-            // protection against TRANSIENT flicker, not a stable misread: ship a level only
-            // when it (a) rides a `known` hero, (b) reads the SAME value in two consecutive
-            // frames, and (c) never decreases (levels only rise; a drop is a misread).
-            // Anything else strips the level (the hero still ships). Build the per-hero map
-            // ONLY from rows that survived to `known` here, so a downgraded/duplicate row
-            // can never contribute (or pollute) a level value.
-            let frame_levels: HashMap<String, u64> = obs
-                .iter()
-                .filter(|o| o.get("status").and_then(|s| s.as_str()) == Some("known"))
-                .filter_map(|o| {
-                    let hero = o.get("hero")?.as_str()?.to_string();
-                    let lvl = o.get("level")?.as_u64()?;
-                    (!hero.is_empty() && (1..=30).contains(&lvl)).then_some((hero, lvl))
-                })
-                .collect();
-            for (hero, lvl) in &frame_levels {
-                match level_seen.get(hero) {
-                    Some((l, c)) if l == lvl => level_seen.insert(hero.clone(), (*lvl, c + 1)),
-                    _ => level_seen.insert(hero.clone(), (*lvl, 1)),
-                };
-            }
-            level_seen.retain(|k, _| frame_levels.contains_key(k));
-            for o in obs.iter_mut() {
-                let hero = o.get("hero").and_then(|h| h.as_str()).unwrap_or("").to_string();
-                let is_known = o.get("status").and_then(|s| s.as_str()) == Some("known");
-                let lvl = o.get("level").and_then(|v| v.as_u64());
-                let ship = match (is_known, lvl) {
-                    (true, Some(l)) if (1..=30).contains(&l) => {
-                        let confirmed = level_seen.get(&hero).map(|(cl, c)| *cl == l && *c >= 2).unwrap_or(false);
-                        let monotonic = level_locked.get(&hero).map(|p| l >= *p).unwrap_or(true);
-                        confirmed && monotonic
-                    }
-                    _ => false,
-                };
-                if ship {
-                    let l = lvl.unwrap().min(30);
-                    let e = level_locked.entry(hero).or_insert(0);
-                    if l > *e {
-                        *e = l;
-                    }
-                } else if let Some(map) = o.as_object_mut() {
-                    map.remove("level");
+                    let _ = app.emit("vision", tb_payload);
                 }
             }
         }
-        let _ = app.emit("vision", payload);
     }
 }
 

@@ -1,6 +1,6 @@
 [package]
 name = "vael"
-version = "0.5.2"
+version = "0.6.0"
 description = "Vael — voice AI coach for Dota 2 (desktop thin client)"
 authors = ["Vael"]
 edition = "2021"

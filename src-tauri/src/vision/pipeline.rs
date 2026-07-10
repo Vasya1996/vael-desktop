@@ -89,7 +89,7 @@ fn own_lock_offset(
 /// A hero is unique per match: if two enemy rows resolve to the SAME hero, at least one
 /// is a misread, so keep `known` only on the highest-confidence row and downgrade the
 /// rest to `unconfirmed`. Never let a duplicate become a fact.
-fn dedupe_known(obs: &mut [VisionObservation]) {
+pub(crate) fn dedupe_known(obs: &mut [VisionObservation]) {
     use std::collections::HashMap;
     let mut best: HashMap<String, usize> = HashMap::new();
     for i in 0..obs.len() {

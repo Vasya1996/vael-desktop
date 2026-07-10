@@ -9,9 +9,13 @@ pub mod color_refs;
 #[cfg(windows)]
 pub mod hwnd;
 pub mod level;
+pub mod locate;
 pub mod ncc;
 pub mod pipeline;
 pub mod recognize;
+pub mod topbar;
+pub mod topbar_refs;
+pub mod vlog;
 pub mod zones;
 
 /// The off-by-default flag file, beside ptt_key / overlay_pos in config_dir().
@@ -34,29 +38,6 @@ pub fn is_enabled() -> bool {
 /// Persist the flag.
 pub fn set_enabled(enabled: bool) {
     let _ = std::fs::write(flag_path(), if enabled { "1" } else { "0" });
-}
-
-/// Directory for debug capture artifacts (created on demand).
-#[cfg(windows)]
-pub fn debug_dir() -> PathBuf {
-    let d = crate::config_dir().join("vision_debug");
-    let _ = std::fs::create_dir_all(&d);
-    d
-}
-
-#[cfg(windows)]
-pub fn capture_to_debug() -> Result<String, String> {
-    if !is_enabled() {
-        return Err("vision disabled (set the flag first)".into());
-    }
-    let hwnd = hwnd::find_dota_hwnd()
-        .ok_or("dota2.exe window not found — launch Dota -windowed -noborder")?;
-    let out = debug_dir().join("cap.png");
-    let out_thread = out.clone();
-    let (w, h, nz) = std::thread::spawn(move || capture::capture_window_to_png(hwnd, &out_thread))
-        .join()
-        .map_err(|_| "capture thread panicked".to_string())??;
-    Ok(format!("{} ({}x{}, nonzero {:.3})", out.display(), w, h, nz))
 }
 
 /// Run one scoreboard scan: capture the Dota window, confirm the GSI own hero, and
@@ -82,6 +63,24 @@ pub fn scan_scoreboard_now(own_hero: &str, own_team: &str) -> Option<serde_json:
         return None;
     }
     Some(serde_json::json!({ "source": "scoreboard", "observations": obs }))
+}
+
+/// One top-bar composition scan. `cached` is the caller-held anchor geometry (steady state
+/// = cheap verify). Returns the payload plus the refreshed geometry to cache.
+#[cfg(windows)]
+pub fn scan_topbar_now(own_hero: &str, own_team: &str, cached: Option<&locate::Located>)
+    -> Option<(serde_json::Value, locate::Located)> {
+    if !is_enabled() { return None; }
+    let hwnd = hwnd::find_dota_hwnd()?;
+    // WGC runs a blocking message loop → capture on a dedicated thread.
+    let rgba = std::thread::spawn(move || capture::capture_window_rgba(hwnd))
+        .join()
+        .ok()?
+        .ok()?;
+    let frame = image::DynamicImage::ImageRgba8(rgba);
+    let (obs, loc) = topbar::scan_topbar(&frame, own_hero, own_team, topbar_refs::load(), cached)?;
+    if obs.is_empty() { return None; }
+    Some((serde_json::json!({ "source": "topbar", "observations": obs }), loc))
 }
 
 /// Top-bar pixel rect (x, y, w, h) inside a captured frame — both teams' hero
